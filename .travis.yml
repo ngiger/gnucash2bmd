@@ -11,8 +11,7 @@ before_install:
 script: bundle exec rspec
 
 rvm:
-  - 2.1.5
-  - 2.2
+  - 2.4.1
   - 2.3.1
   - ruby-head
 
@@ -23,6 +22,4 @@ matrix:
 notifications:
   email:
     recipients:
-      - ngiger@ywesee.com
-      - yasaka@ywesee.com
-      - zdavatz@ywesee.com
+      - niklaus.giger@member.fsf.com
