@@ -12,17 +12,19 @@ rescue LoadError
 end
 
 OLD_YEAR =  Date.today.year - 2
+files_read = [
+  "Aufwendungen#{OLD_YEAR}.csv",
+]
+
 opts = Trollop::options do
   banner <<-EOS
 Erstellen einer CSV Datei für BMD-Import
   Gemäss http://www.bmd.at/Portaldata/1/Resources/help/17.26/OES/Documents/1109441501000002470.html
   Bedingung: Gnucash-Inhalt muss wie folgt exportiert worden sein
   Annahmen: Keine Fremdwährungen
+  Folgende Dateien werden eingelesen
     Konten#{OLD_YEAR}.csv
-    Aktiva#{OLD_YEAR}.csv
-    Passiva#{OLD_YEAR}.csv
-    Aufwendungen#{OLD_YEAR}.csv
-    Erträge#{OLD_YEAR}.csv
+    #{files_read.join("\n")}
 
 Erzeugt eine Datei #{OLD_YEAR}_bmd.csv
 
@@ -33,6 +35,10 @@ EOS
   opt :jahr, "Jahr des Gnucas-Exports", :type => :integer, :default=> OLD_YEAR
   opt :ausgabe, "Name der erstellten Datei", :type => :string, :default =>"bmd_#{OLD_YEAR}.csv"
 end
+
+files_read = [
+  "Aufwendungen#{ opts[:jahr]}.csv",
+]
 
 AUSGABE = opts[:ausgabe]
 
@@ -203,12 +209,7 @@ end
 
 read_accounts("Konten#{OLD_YEAR}.csv")
 BANK_GUIDS.freeze
-[
-#  "Aktiva#{OLD_YEAR}.csv",
-#  "Passiva#{OLD_YEAR}.csv",
-  "Aufwendungen#{OLD_YEAR}.csv",
-# "Erträge#{OLD_YEAR}.csv",
-].each do |filename|
+files_read.each do |filename|
   read_journal(filename)
 end
 emit_bmd(AUSGABE)
