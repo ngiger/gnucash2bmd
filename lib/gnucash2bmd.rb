@@ -190,8 +190,25 @@ def read_journal(filename)
   @contents << @bmd if @bmd # save terminated
 end
 
+def check_cmd(filename)
+  nr_rows = nil
+  idx = 0
+  CSV.foreach(filename,  :col_sep => ';') do |row|
+    idx += 1
+    nr_rows ||= row.size
+    unless nr_rows == row.size
+      puts "Expected #{nr_rows} not #{row.size} in line #{idx}"
+      puts "   #{row}"
+      exit 2
+    end
+  end
+  puts "All #{idx} lines of #{filename} have #{nr_rows} elements"
+rescue => error
+  puts "got #{error} at line #{idx}"
+end
+
 def emit_bmd(filename)
-  CSV.open(filename, "wb", :encoding => 'UTF-8') do |csv|
+  CSV.open(filename, "wb", :encoding => 'UTF-8', :force_quotes  => true, :col_sep => ';') do |csv|
     csv << IDS.values
     @contents.each do |content|
       value_array = []
@@ -213,5 +230,6 @@ files_read.each do |filename|
   read_journal(filename)
 end
 emit_bmd(AUSGABE)
+check_cmd(AUSGABE)
 
 puts "Created #{AUSGABE} with #{@contents.size} lines"
