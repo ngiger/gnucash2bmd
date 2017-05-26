@@ -1,3 +1,7 @@
+## 0.0.3 of 2017.05.26
+
+- Added reading gnucash files directly
+
 ## 0.0.2 of 2017.05.26
 
 - Force col-sep to ';', force quotes for BMD importer
