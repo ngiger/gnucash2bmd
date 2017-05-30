@@ -46,7 +46,7 @@ files_read = [
 
 AUSGABE = opts[:ausgabe]
 GNUCASH = opts[:gnucash]
-DATE_FORMAT= '%Y.%m.%d'
+DATE_FORMAT= '%d.%m.%Y'
 
 KONTEN_GNUCASH_HEADERS = {
   'type' => nil,
@@ -83,6 +83,26 @@ KONTEN_JOURNAL_HEADERS = {
   Mandant_ID = 1
 
   BANK_GUIDS ||= {}
+  NOTWNDIG = %(
+  Notwendige Felder für den BuErf Import:
+Grundsätzlich alle Felder, die Sie auch beim "manuellen" Buchen in der Buchungsmaske eingeben:
+  Konto Führendes Buchungskonto
+  Gkonto Gegenkonto
+  Belegnr Belegnummer, Rechnungsnummer
+  Buchdatum Buchungsdatum
+  Belegdatum Belegdatum, Rechnungsdatum
+  Buchcode Code, ob Soll oder Haben
+  Betrag Buchungsbetrag für führendes Konto
+  Text Buchungstext
+
+Buchsymbol Buchungssymbol AR
+Steuercode Code, ob Vorsteuer oder Umsatzsteuer usw.
+Prozent Steuerprozentsatz
+Steuer Steuerbetrag
+ZZiel Nettozahlungsziel in Tagen
+Skontopz Skontoprozentsatz
+Skontotage Skontozahlungsziel in Tagen
+)
   IDS =  {
     :satzart  => 'satzart',
 #    :mandant => 'Mandats-IDs',
@@ -91,10 +111,28 @@ KONTEN_JOURNAL_HEADERS = {
     :konto => 'konto',
     :gkonto => 'gkonto',
     :buchdatum => 'buchdatum',
-    :buchungstext => 'buchungstext',
+    :belegdatum => 'belegdatum',
+    :buchungstext => 'text',
     :betrag => 'betrag',
     :belegnr => 'belegnr',
     :buchcode => 'buchcode',
+
+    :buchsymbol => 'buchsymbol',
+    :steuercode => 'steuercode',
+    :prozent => 'prozent',
+    :steuer => 'steuer',
+    :zziel => 'zziel',
+    :skontopz => 'skontopz',
+    :skontotage => 'skontotage',
+    }
+  DEFAULTS = {
+    :buchsymbol => 'AR',
+    :steuercode => '0,0',
+    :prozent => '0,0',
+    :steuer => '0,0',
+    :zziel => '30',
+    :skontopz => '0,0',
+    :skontotage => '10',
     }
   BMD_LINE = eval("Struct.new( :#{IDS.keys.join(', :')})")
   class BMD_LINE
@@ -116,7 +154,6 @@ KONTEN_JOURNAL_HEADERS = {
       end
       new_id = BANK_GUIDS.size + 1
       BANK_GUIDS[new_id] = konto_bezeichung
-      new_id
     end
     def Helpers.get_ids_sorted_by_value
       IDS.sort_by.reverse_each{ |k, v| v }.to_h
@@ -155,6 +192,7 @@ def read_journal(filename)
   @mehrteilig = nil
   @buchungs_nr = 0 # Will be added by column Aktion
   puts "reading journal from #{filename}"
+  konto = KONTEN_JOURNAL_HEADERS.values.index('konto')
   CSV.foreach(filename) do |row|
     line_nr += 1
     if line_nr == 1
@@ -201,6 +239,10 @@ end
 def check_cmd(filename)
   nr_rows = nil
   idx = 0
+  konto_row = IDS.keys.index(:konto)
+  gkonto_row = IDS.keys.index(:gkonto)
+  guid_row = IDS.keys.index(:bank_guid)
+  belegnr_row = IDS.keys.index(:belegnr)
   CSV.foreach(filename,  :col_sep => ';') do |row|
     idx += 1
     nr_rows ||= row.size
@@ -208,6 +250,25 @@ def check_cmd(filename)
       puts "Expected #{nr_rows} not #{row.size} in line #{idx}"
       puts "   #{row}"
       exit 2
+    end
+    next if idx == 1
+    if row[belegnr_row]
+      value = row[belegnr_row]
+      raise "Zeile #{idx} für Beleg-Nr '#{value}' darf maximal 20 Zeichen lang sein (ist #{value.length})." if value.length > 20
+      raise "Zeile #{idx} für Beleg-Nr  '#{value}' muss alphanumerisch sein." unless  /^[a-z0-9]+$/i.match(value)
+    end
+    if row[guid_row]
+      value = row[guid_row]
+      raise "Zeile #{idx} für GUID '#{value}' darf maximal 36 Zeichen lang sein (ist #{value.length})." if value.length > 36
+      raise "Zeile #{idx} für GUID '#{value}' muss alphanumerisch sein." unless  /^[a-z0-9]+$/i.match(value)
+    end
+    if row[gkonto_row]
+      value = row[gkonto_row]
+      raise "Zeile #{idx} für Gkonto '#{value}' muss eine Zeile angegeben werden" unless value.to_i > 0 && value.size < 10
+    end
+    if row[konto_row]
+      value = row[konto_row]
+      raise "Zeile #{idx} für Konto '#{value}' muss eine Zeile angegeben werden" unless value.to_i > 0 && value.size < 10
     end
   end
   puts "Alle #{idx} Zeilen von #{filename} haben #{nr_rows} Elemente"
@@ -237,8 +298,8 @@ def read_gnucash(filename)
   book = Gnucash.open(filename)
   book.accounts.each do |account|
     bmd = BMD_LINE.new
-    # bmd.bank_guid = Helpers.search_bank_guid(account.name)
-    bmd.bank_guid = account.id
+    bmd.bank_guid = Helpers.search_bank_guid(account.id)
+    # bmd.bank_guid = account.id
     bmd.name = account.name
     bmd.name_voll = account.full_name
     bmd.account_nr = account.description
@@ -264,11 +325,17 @@ def read_gnucash(filename)
       @last_transaction_date  = @buchung.buchdatum if !@last_transaction_date  || @last_transaction_date  < @buchung.buchdatum
       @first_transaction_date = @buchung.buchdatum if !@first_transaction_date || @first_transaction_date > @buchung.buchdatum
       @buchung.buchungstext = txn.description
-      @buchung.belegnr      = txn.id # or @buchungs_nr ?? TODO
+      @buchung.belegnr      = @buchungs_nr # txn.id ist 32 Zeichen lang. Ungültig!!
+      @buchung.belegdatum   = @buchung.buchdatum
+      DEFAULTS.each do |key, value|
+        cmd = "@buchung.#{key} = '#{value}'"
+        eval cmd
+      end
+
 
       if txn.splits.size == 2
-        @buchung.konto    = txn.splits.first[:account].id
-        @buchung.gkonto   = txn.splits.last[:account].id
+        @buchung.konto    = Helpers.search_bank_guid(txn.splits.first[:account].id)
+        @buchung.gkonto   = Helpers.search_bank_guid(txn.splits.last[:account].id)
         @buchung.betrag   = txn.splits.first[:value]
         @buchung.buchcode = getBuchcode(txn.splits.first[:value])
         @contents << @buchung
@@ -288,12 +355,12 @@ def read_gnucash(filename)
         end if $VERBOSE
         txn.splits.each_with_index do |split, idx|
           if txn.value.to_s.eql?(split[:value].to_s)
-            @buchung.konto    = split[:account].id
+            @buchung.konto    = Helpers.search_bank_guid(split[:account].id)
             @buchung.betrag   = split[:value]
             @buchung.buchcode = getBuchcode(split[:value])
           else
             gegenbuchung = @buchung.clone
-            gegenbuchung.gkonto = split[:account].id
+            gegenbuchung.gkonto = Helpers.search_bank_guid(split[:account].id)
             gegenbuchung.betrag = split[:value]
             gegenbuchung.buchcode = getBuchcode(split[:value])
             gegenbuchungen << gegenbuchung
